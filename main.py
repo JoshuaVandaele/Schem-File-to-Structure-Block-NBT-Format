@@ -24,7 +24,7 @@ nbtSchem["palette"] = []
 nbtSchem["blocks"] = []
 nbtSchem["author"] = "Folfy_Blue"
 
-WE = load('input.schem').root
+WE = load('input.schem')
 bytePalette = dict(WE["Palette"])
 
 bytePalette = {int(v): k for k, v in bytePalette.items()} # Inverse keys and values while making the values actual ints
