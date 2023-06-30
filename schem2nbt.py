@@ -207,7 +207,7 @@ if __name__ == "__main__":
         "--input",
         type=str,
         required=True,
-        help="Path to the input schematic file.",
+        help="Path to the input schematic file or folder.",
     )
     parser.add_argument(
         "-o",
@@ -215,7 +215,7 @@ if __name__ == "__main__":
         type=str,
         required=False,
         default=None,
-        help="Path to the output nbt file.",
+        help="Path to the output nbt file or folder.",
     )
     parser.add_argument(
         "-f",
