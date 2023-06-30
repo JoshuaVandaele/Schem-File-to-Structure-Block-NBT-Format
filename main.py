@@ -1,9 +1,10 @@
 import re
 from math import floor
-from typing import Any
 
 from nbtlib import CompoundSchema, File, load, schema
 from nbtlib.tag import Compound, Int, List, String
+
+SCHEMATIC_VERSION = 2586
 
 
 def structure_schema() -> CompoundSchema:
@@ -58,8 +59,16 @@ def get_schematic_size(worldedit: File) -> dict[str, int]:
 
 
 def initiate_schema(worldedit: File) -> CompoundSchema:
+    """Initiates a structure file.
+
+    Args:
+        worldedit (File): The worldedit schematic file to base the structure file off of.
+
+    Returns:
+        CompoundSchema: The structure file.
+    """
     nbt_schematic: CompoundSchema = structure_schema()
-    nbt_schematic["DataVersion"] = 2586
+    nbt_schematic["DataVersion"] = SCHEMATIC_VERSION
     nbt_schematic["palette"] = []
     nbt_schematic["blocks"] = []
     nbt_schematic["author"] = "Folfy_Blue"
@@ -70,14 +79,14 @@ def initiate_schema(worldedit: File) -> CompoundSchema:
     return nbt_schematic
 
 
-def get_block_palette(worldedit: File) -> dict[int, Any]:
+def get_block_palette(worldedit: File) -> dict[int, int]:
     """Gets the block palette from a worldedit schematic file and returns it as a dictionary.
 
     Args:
         worldedit (File): The worldedit schematic file.
 
     Returns:
-        dict[int, Any]: A dictionary of block palette entries.
+        dict[int, int]: A dictionary of block palette entries.
     """
     return {int(v): k for k, v in dict(worldedit["Palette"]).items()}
 
@@ -96,8 +105,8 @@ def process_block_palette(
     """
     new_palette = {}
     for _palette, block in byte_palette.items():
-        block_name, block_properties = re.findall("(minecraft:\w+)(\[.+\])?", block)[0]
-        block_properties = re.findall("((\w+)=(\w+))", block_properties)
+        block_name, block_properties = re.findall(r"(minecraft:\w+)(\[.+\])?", block)[0]
+        block_properties = re.findall(r"((\w+)=(\w+))", block_properties)
         bp = {}
         for block_property in block_properties:
             bp[block_property[1]] = String(block_property[2])
@@ -110,14 +119,14 @@ def process_block_palette(
     return nbt_schematic, new_palette
 
 
-def process_block_entities(worldedit: File) -> dict[str, Any]:
+def process_block_entities(worldedit: File) -> dict[str, Compound]:
     """Processes block entities from a worldedit schematic file and returns them as a dictionary.
 
         Args:
     worldedit (nbtlib.File): The worldedit schematic file.
 
             Returns:
-    dict[str, Any]: A dictionary of block entities.
+    dict[str, Compound]: A dictionary of block entities.
     """
     block_entities = {}
     for data in worldedit["BlockEntities"]:
@@ -132,18 +141,18 @@ def process_block_entities(worldedit: File) -> dict[str, Any]:
 def process_blocks(
     worldedit: File,
     nbt_schematic: CompoundSchema,
-    byte_palette: dict[int, Any],
-    new_palette: dict[int, Any],
-    block_entities: dict[str, Any] = {},
+    byte_palette: dict[int, int],
+    new_palette: dict[int, str],
+    block_entities: dict[str, Compound] = {},
 ) -> CompoundSchema:
     """Processes blocks from a worldedit schematic file and returns them in a structure file format.
 
     Args:
         worldedit (File): The worldedit schematic file.
         nbt_schematic (CompoundSchema): The structure file.
-        byte_palette (dict[int, Any]): The old block palette from world edit.
-        new_palette (dict[int, Any]): The new block palette to use.
-        block_entities (dict[str, Any], optional): The block entities. If empty, they will be devoid of nbt. Defaults to {}.
+        byte_palette (dict[int, int]): The old block palette from world edit.
+        new_palette (dict[int, str]): The new block palette to use.
+        block_entities (dict[str, Compound], optional): The block entities. If empty, they will be devoid of nbt. Defaults to {}.
 
     Returns:
         CompoundSchema: The structure file.
@@ -154,8 +163,8 @@ def process_blocks(
         x = floor((i % (size["z"] * size["x"])) % size["z"])
         y = floor(i / (size["z"] * size["x"]))
         z = floor((i % (size["z"] * size["x"])) / size["z"])
-        block = byte_palette[int(worldedit["BlockData"][i])]
-        key = f"{x} {y} {z}"
+        block: int = byte_palette[int(worldedit["BlockData"][i])]
+        key: str = f"{x} {y} {z}"
 
         if key in block_entities:
             nbt_schematic["blocks"].append(
@@ -177,19 +186,24 @@ def process_blocks(
 
 
 if __name__ == "__main__":
-    WE: File = load("input.schem")
+    try:
+        with load("input.schem") as worldedit:
+            nbt_schematic: CompoundSchema = initiate_schema(worldedit)
 
-    nbt_schematic: CompoundSchema = initiate_schema(WE)
+            block_entities = process_block_entities(worldedit)
 
-    block_entities = process_block_entities(WE)
+            byte_palette = get_block_palette(worldedit)
 
-    byte_palette = get_block_palette(WE)
+            nbt_schematic, new_palette = process_block_palette(
+                nbt_schematic, byte_palette
+            )
 
-    nbt_schematic, new_palette = process_block_palette(nbt_schematic, byte_palette)
-
-    nbt_schematic = process_blocks(
-        WE, nbt_schematic, byte_palette, new_palette, block_entities
-    )
+            nbt_schematic = process_blocks(
+                worldedit, nbt_schematic, byte_palette, new_palette, block_entities
+            )
+    except FileNotFoundError:
+        print(f"File 'input.schem' not found.")
+        exit(1)
 
     print("\nDone! Saving...")
     File({"": Compound(nbt_schematic)}, gzipped=True).save("output.nbt")
