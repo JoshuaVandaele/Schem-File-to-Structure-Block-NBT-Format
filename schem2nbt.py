@@ -198,7 +198,92 @@ def process_blocks(
     return nbt_schematic
 
 
-if __name__ == "__main__":
+def process_file(input_file: str, output_file: str) -> None:
+    """Processes a worldedit schematic file and saves it as a structure file.
+
+    Args:
+        input_file (str): The worldedit schematic file.
+        output_file (str): The structure file.
+    """
+    print(f"Processing {input_file}...")
+    try:
+        with load(input_file) as worldedit:
+            nbt_schematic: CompoundSchema = initiate_schema(worldedit)
+
+            block_entities = process_block_entities(worldedit)
+
+            byte_palette = get_block_palette(worldedit)
+
+            nbt_schematic, new_palette = process_block_palette(
+                nbt_schematic, byte_palette
+            )
+
+            nbt_schematic = process_blocks(
+                worldedit, nbt_schematic, byte_palette, new_palette, block_entities
+            )
+
+        print("\nDone! Saving...")
+        File({"": Compound(nbt_schematic)}, gzipped=True).save(output_file)
+        print(f"Saved to {output_file}")
+    except Exception as e:
+        print(f"An error occurred while processing {input_file}: {repr(e)}")
+
+
+def process_files(input_files: list[str], output_files: list[str]) -> None:
+    """Process files from input and output them to given locations.
+
+    Args:
+        input_files (list[str]): The input files.
+        output_files (list[str]): The output files.
+    """
+
+    for i in range(len(input_files)):
+        input_file = input_files[i]
+        output_file = output_files[i]
+        process_file(input_file, output_file)
+
+
+def process_paths(args: argparse.Namespace) -> tuple[list[str], list[str]]:
+    """Process input and output paths according to provided arguments.
+
+    Args:
+        args (argparse.Namespace): The arguments provided by the user.
+
+    Returns:
+        tuple[list[str], list[str]]: A tuple containing the input and output paths.
+    """
+    input_files, output_files = [], []
+    if args.folder:
+        # input_path is a directory
+        if not os.path.exists(args.input):
+            print(f"Folder '{args.input}' not found.")
+            exit(1)
+        if not args.output:
+            args.output = args.input
+        os.makedirs(args.output, exist_ok=True)
+        file_list = [
+            f
+            for f in os.listdir(args.input)
+            if os.path.isfile(os.path.join(args.input, f))
+        ]
+        input_files = [os.path.join(args.input, f) for f in file_list]
+        output_files = [
+            os.path.join(args.output, f"{os.path.splitext(f)[0]}.nbt")
+            for f in file_list
+        ]
+    else:
+        # input_path is a file or doesn't exist
+        if not os.path.isfile(args.input):
+            print(f"File '{args.input}' not found.")
+            exit(1)
+        input_files = [args.input]
+        output_files = [args.output or f"{os.path.splitext(args.input)[0]}.nbt"]
+
+    return input_files, output_files
+
+
+def main() -> None:
+    """Main function to execute the script."""
     parser = argparse.ArgumentParser(
         description="Converts WorldEdit schematic files to Minecraft Structure files."
     )
@@ -226,67 +311,9 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    if args.folder:
-        # input_path is a directory
-        try:
-            input_files = [
-                file_path
-                for f in os.listdir(args.input)
-                if os.path.isfile(file_path := os.path.join(args.input, f))
-            ]
-            if not args.output:
-                args.output = args.input
+    input_files, output_files = process_paths(args)
+    process_files(input_files, output_files)
 
-            os.makedirs(args.output, exist_ok=True)
 
-            output_files = [
-                os.path.join(args.output, f"{os.path.splitext(f)[0]}.nbt")
-                for f in os.listdir(args.input)
-                if os.path.isfile(os.path.join(args.input, f))
-            ]
-            print(output_files)
-        except FileNotFoundError:
-            print(f"Folder '{args.input}' not found.")
-            exit(1)
-    elif not os.path.isfile(args.input):
-        # input_path doesn't exist
-        print(f"File '{args.input}' not found.")
-        exit(1)
-    else:
-        # input_path is a file
-        input_files = [args.input]
-        if not args.output:
-            filename, file_extension = os.path.splitext(args.input)
-            args.output = f"{filename}.nbt"
-        output_files = [args.output]
-
-    for i in range(len(input_files)):
-        input_file = input_files[i]
-        output_file = output_files[i]
-        print(f"Processing {input_file}...")
-
-        try:
-            with load(input_file) as worldedit:
-                nbt_schematic: CompoundSchema = initiate_schema(worldedit)
-
-                block_entities = process_block_entities(worldedit)
-
-                byte_palette = get_block_palette(worldedit)
-
-                nbt_schematic, new_palette = process_block_palette(
-                    nbt_schematic, byte_palette
-                )
-
-                nbt_schematic = process_blocks(
-                    worldedit, nbt_schematic, byte_palette, new_palette, block_entities
-                )
-        except Exception as e:
-            print(f"An error occurred while processing {input_file}: {repr(e)}")
-            continue
-        print("\nDone! Saving...")
-        try:
-            File({"": Compound(nbt_schematic)}, gzipped=True).save(output_file)
-        except FileNotFoundError:
-            print(f"Folder '{args.output}' not found. Could not save {output_file}.")
-            continue
-        print(f"Saved to {output_file}")
+if __name__ == "__main__":
+    main()
