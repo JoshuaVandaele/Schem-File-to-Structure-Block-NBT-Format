@@ -1,4 +1,17 @@
-Please note, you need the pip package nbtlib to use this.
-# Usage
-Paste your schematic file here and title it "input.schem" and then run the script.  
-You will receive your file as "output.nbt", ready to be used.
+# Schem File to Structure Block
+
+This script converts a world edit schematic file to a structure block file.
+
+## Requirements
+
+You need to install the required packages specified in `requirements.txt` using pip.
+
+```sh
+pip install -r requirements.txt
+```
+
+## Usage
+
+```sh
+python schem2nbt.py <-i/--input schem_file.schem> <-o/--output output_file.nbt>
+```

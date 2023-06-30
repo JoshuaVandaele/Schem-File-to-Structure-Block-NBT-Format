@@ -1,3 +1,4 @@
+import argparse
 import re
 from math import floor
 
@@ -186,8 +187,27 @@ def process_blocks(
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Converts WorldEdit schematic files to Minecraft Structure files."
+    )
+    parser.add_argument(
+        "-i",
+        "--input",
+        type=str,
+        required=True,
+        help="Path to the input schematic file.",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=str,
+        required=True,
+        help="Path to the output structure file.",
+    )
+    args = parser.parse_args()
+
     try:
-        with load("input.schem") as worldedit:
+        with load(args.input) as worldedit:
             nbt_schematic: CompoundSchema = initiate_schema(worldedit)
 
             block_entities = process_block_entities(worldedit)
@@ -202,9 +222,9 @@ if __name__ == "__main__":
                 worldedit, nbt_schematic, byte_palette, new_palette, block_entities
             )
     except FileNotFoundError:
-        print(f"File 'input.schem' not found.")
+        print(f"File '{args.input}' not found.")
         exit(1)
 
     print("\nDone! Saving...")
-    File({"": Compound(nbt_schematic)}, gzipped=True).save("output.nbt")
+    File({"": Compound(nbt_schematic)}, gzipped=True).save(args.output)
     print("Saved to output.nbt")
