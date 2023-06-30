@@ -13,5 +13,16 @@ pip install -r requirements.txt
 ## Usage
 
 ```sh
-python schem2nbt.py <-i/--input schem_file.schem> <-o/--output output_file.nbt>
+python schem2nbt.py <-i/--input schem_file.schem>
+python schem2nbt.py <-i/--input schem_folder> -f
+```
+
+```sh
+python schem2nbt.py -h
+
+>  options:
+>    -h, --help            show this help message and exit
+>    -i INPUT, --input INPUT
+>                          Path to the input schematic file.
+>    -f, --folder          Whether to treat the input path as a file or a folder.
 ```

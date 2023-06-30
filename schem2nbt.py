@@ -1,4 +1,5 @@
 import argparse
+import os
 import re
 from math import floor
 
@@ -212,30 +213,80 @@ if __name__ == "__main__":
         "-o",
         "--output",
         type=str,
-        required=True,
-        help="Path to the output structure file.",
+        required=False,
+        default=None,
+        help="Path to the output nbt file.",
+    )
+    parser.add_argument(
+        "-f",
+        "--folder",
+        action="store_true",
+        default=False,
+        help="Whether to treat the input path as a file or a folder.",
     )
     args = parser.parse_args()
 
-    try:
-        with load(args.input) as worldedit:
-            nbt_schematic: CompoundSchema = initiate_schema(worldedit)
+    if args.folder:
+        # input_path is a directory
+        try:
+            input_files = [
+                file_path
+                for f in os.listdir(args.input)
+                if os.path.isfile(file_path := os.path.join(args.input, f))
+            ]
+            if not args.output:
+                args.output = args.input
 
-            block_entities = process_block_entities(worldedit)
+            os.makedirs(args.output, exist_ok=True)
 
-            byte_palette = get_block_palette(worldedit)
-
-            nbt_schematic, new_palette = process_block_palette(
-                nbt_schematic, byte_palette
-            )
-
-            nbt_schematic = process_blocks(
-                worldedit, nbt_schematic, byte_palette, new_palette, block_entities
-            )
-    except FileNotFoundError:
+            output_files = [
+                os.path.join(args.output, f"{os.path.splitext(f)[0]}.nbt")
+                for f in os.listdir(args.input)
+                if os.path.isfile(os.path.join(args.input, f))
+            ]
+            print(output_files)
+        except FileNotFoundError:
+            print(f"Folder '{args.input}' not found.")
+            exit(1)
+    elif not os.path.isfile(args.input):
+        # input_path doesn't exist
         print(f"File '{args.input}' not found.")
         exit(1)
+    else:
+        # input_path is a file
+        input_files = [args.input]
+        if not args.output:
+            filename, file_extension = os.path.splitext(args.input)
+            args.output = f"{filename}.nbt"
+        output_files = [args.output]
 
-    print("\nDone! Saving...")
-    File({"": Compound(nbt_schematic)}, gzipped=True).save(args.output)
-    print(f"Saved to {args.output}")
+    for i in range(len(input_files)):
+        input_file = input_files[i]
+        output_file = output_files[i]
+        print(f"Processing {input_file}...")
+
+        try:
+            with load(input_file) as worldedit:
+                nbt_schematic: CompoundSchema = initiate_schema(worldedit)
+
+                block_entities = process_block_entities(worldedit)
+
+                byte_palette = get_block_palette(worldedit)
+
+                nbt_schematic, new_palette = process_block_palette(
+                    nbt_schematic, byte_palette
+                )
+
+                nbt_schematic = process_blocks(
+                    worldedit, nbt_schematic, byte_palette, new_palette, block_entities
+                )
+        except Exception as e:
+            print(f"An error occurred while processing {input_file}: {repr(e)}")
+            continue
+        print("\nDone! Saving...")
+        try:
+            File({"": Compound(nbt_schematic)}, gzipped=True).save(output_file)
+        except FileNotFoundError:
+            print(f"Folder '{args.output}' not found. Could not save {output_file}.")
+            continue
+        print(f"Saved to {output_file}")
