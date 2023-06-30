@@ -1,10 +1,14 @@
 import argparse
+import logging
+import multiprocessing
 import os
 import re
 from math import floor
+from typing import Union
 
 from nbtlib import CompoundSchema, File, load, schema
 from nbtlib.tag import Compound, Int, List, String
+from tqdm import tqdm
 
 SCHEMATIC_VERSION = 2586
 
@@ -148,6 +152,7 @@ def process_blocks(
     byte_palette: dict[int, str],
     new_palette: dict[str, int],
     block_entities: dict[str, Compound] = {},
+    queue: Union[multiprocessing.Queue, None] = None,
 ) -> CompoundSchema:
     """Processes blocks from a worldedit schematic file and returns them in a structure file format.
 
@@ -156,14 +161,16 @@ def process_blocks(
         nbt_schematic (CompoundSchema): The structure file.
         byte_palette (dict[int, str]): The old block palette from world edit.
         new_palette (dict[str, int]): The new block palette to use.
+        input_file (str, optional): The name of the input file, used for the loading bar. Defaults to "".
         block_entities (dict[str, Compound], optional): The block entities. If empty, they will be devoid of nbt. Defaults to {}.
+        queue (Union[multiprocessing.Queue, None], optional): The queue to use for the loading bar. Defaults to None.
 
     Returns:
         CompoundSchema: The structure file.
     """
     size: dict[str, int] = get_schematic_size(worldedit)
 
-    for i in range(block_count := len(worldedit["BlockData"])):
+    for i in range(len(worldedit["BlockData"])):
         x = floor((i % (size["z"] * size["x"])) % size["z"])
         y = floor(i / (size["z"] * size["x"]))
         z = floor((i % (size["z"] * size["x"])) / size["z"])
@@ -175,7 +182,7 @@ def process_blocks(
             block: str = byte_palette[block_id]
         except KeyError:
             block: str = byte_palette[0]
-            print(
+            logging.warning(
                 f"We couldn't process the block at {key}: Block {block_id} doesn't exist. Defaulting to block 0 ({block})."
             )
 
@@ -191,21 +198,23 @@ def process_blocks(
             nbt_schematic["blocks"].append(
                 {"state": new_palette[block], "pos": [x, y, z]}
             )
-        print(
-            f"Processed {i} / {block_count} blocks. ({round(i / block_count * 100, 2)} %)",
-            end="\r",
-        )
+        if queue:
+            queue.put(True)
+
     return nbt_schematic
 
 
-def process_file(input_file: str, output_file: str) -> None:
+def process_file(
+    input_file: str, output_file: str, queue=Union[multiprocessing.Queue, None]
+) -> None:
     """Processes a worldedit schematic file and saves it as a structure file.
 
     Args:
         input_file (str): The worldedit schematic file.
         output_file (str): The structure file.
+        queue (Union[multiprocessing.Queue, None], optional): The queue to use for the loading bar. Defaults to None.
     """
-    print(f"Processing {input_file}...")
+    logging.info(f"Processing {input_file}...")
     try:
         with load(input_file) as worldedit:
             nbt_schematic: CompoundSchema = initiate_schema(worldedit)
@@ -219,14 +228,18 @@ def process_file(input_file: str, output_file: str) -> None:
             )
 
             nbt_schematic = process_blocks(
-                worldedit, nbt_schematic, byte_palette, new_palette, block_entities
+                worldedit=worldedit,
+                nbt_schematic=nbt_schematic,
+                byte_palette=byte_palette,
+                new_palette=new_palette,
+                block_entities=block_entities,
+                queue=queue,  # type: ignore - The type checker doesn't like multiprocessing.Queue
             )
 
-        print("\nDone! Saving...")
+        logging.info(f"Saving {output_file}...")
         File({"": Compound(nbt_schematic)}, gzipped=True).save(output_file)
-        print(f"Saved to {output_file}")
     except Exception as e:
-        print(f"An error occurred while processing {input_file}: {repr(e)}")
+        logging.error(f"An error occurred while processing {input_file}: {repr(e)}")
 
 
 def process_files(input_files: list[str], output_files: list[str]) -> None:
@@ -236,11 +249,31 @@ def process_files(input_files: list[str], output_files: list[str]) -> None:
         input_files (list[str]): The input files.
         output_files (list[str]): The output files.
     """
+    queue = multiprocessing.Queue()
+    processes = []
 
-    for i in range(len(input_files)):
-        input_file = input_files[i]
-        output_file = output_files[i]
-        process_file(input_file, output_file)
+    total_blocks = 0
+    for input_file in input_files:
+        with load(input_file) as worldedit:
+            total_blocks += len(worldedit["BlockData"])
+
+    with tqdm(total=total_blocks, desc="Blocks processed") as pbar:
+        for input_file, output_file in zip(input_files, output_files):
+            process = multiprocessing.Process(
+                target=process_file, args=(input_file, output_file, queue)
+            )
+            processes.append(process)
+            process.start()
+
+        while any(process.is_alive() for process in processes):
+            while not queue.empty():
+                queue.get()
+                pbar.update()
+
+        for process in processes:
+            process.join()
+
+        pbar.close()
 
 
 def process_paths(args: argparse.Namespace) -> tuple[list[str], list[str]]:
@@ -256,7 +289,7 @@ def process_paths(args: argparse.Namespace) -> tuple[list[str], list[str]]:
     if args.folder:
         # input_path is a directory
         if not os.path.exists(args.input):
-            print(f"Folder '{args.input}' not found.")
+            logging.error(f"Folder '{args.input}' not found.")
             exit(1)
         if not args.output:
             args.output = args.input
@@ -274,7 +307,7 @@ def process_paths(args: argparse.Namespace) -> tuple[list[str], list[str]]:
     else:
         # input_path is a file or doesn't exist
         if not os.path.isfile(args.input):
-            print(f"File '{args.input}' not found.")
+            logging.error(f"File '{args.input}' not found.")
             exit(1)
         input_files = [args.input]
         output_files = [args.output or f"{os.path.splitext(args.input)[0]}.nbt"]
@@ -309,9 +342,22 @@ def main() -> None:
         default=False,
         help="Whether to treat the input path as a file or a folder.",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="Whether to print verbose output",
+    )
     args = parser.parse_args()
 
+    if args.verbose:
+        logging.basicConfig(level=logging.INFO)
+    else:
+        logging.basicConfig(level=logging.CRITICAL)
+
     input_files, output_files = process_paths(args)
+
     process_files(input_files, output_files)
 
 
