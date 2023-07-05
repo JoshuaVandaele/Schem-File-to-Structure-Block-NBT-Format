@@ -92,7 +92,7 @@ def get_block_palette(worldedit: File) -> dict[int, str]:
         worldedit (File): The worldedit schematic file.
 
     Returns:
-        dict[int, int]: A dictionary of block palette entries.
+        dict[int, str]: A dictionary of block palette entries.
     """
     return {int(v): k for k, v in dict(worldedit["Palette"]).items()}
 
